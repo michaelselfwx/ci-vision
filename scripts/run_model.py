@@ -26,6 +26,16 @@ from train import (
 )
 
 
+# Geographic bounds (min_lon, max_lon, min_lat, max_lat) of the 200 km x 200 km
+# domain used by sat_rad.py for each radar. Add your own site here (compute it with
+# bounding_box.py) or pass --bbox on the command line.
+RADAR_BOUNDS: Dict[str, Tuple[float, float, float, float]] = {
+    "KHGX": (-96.1164, -94.0545, 28.5698, 30.3741),
+    "KMLB": (-81.6721, -79.6367, 27.2106, 29.0153),
+    "KJAX": (-82.7434, -80.6604, 29.5825, 31.3866),
+}
+
+
 @dataclass(frozen=True)
 class DaySample:
     day: str
@@ -79,7 +89,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--freeze-backbone-epochs", type=int, default=1, help="Number of epochs to freeze the backbone network")
     parser.add_argument("--run-output-dir", type=str, default="../runs/{version}", help="Directory to save run outputs (e.g. predictions, logs). Supports {version} and {date} placeholders.")
     parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--radar", type=str, default="KHGX", help="Radar region to find the images (e.g. KHGX, KHGK, KJAX, KMLB)")
+    parser.add_argument("--class-weighting", type=str, default="none", help="Training-only option; accepted so training configs can be passed with @, ignored at inference")
+    parser.add_argument("--radar", type=str, default="KHGX", help="Radar station of the imagery (e.g. KHGX, KJAX, KMLB)")
+    parser.add_argument("--input-root", type=Path, default=None, help="Folder searched (recursively) for the sat/rad PNGs to predict on. Default: ../other_images/<RADAR>/ (where sat_rad.py saves them)")
+    parser.add_argument("--bbox", type=float, nargs=4, default=None, metavar=("MIN_LON", "MAX_LON", "MIN_LAT", "MAX_LAT"),
+                        help="Geographic bounds of the imagery, used to georeference the GeoTIFF masks. Default: looked up from --radar in RADAR_BOUNDS")
     parser.add_argument("--day", type=str, nargs="+", default=None,
                         help="One or more days YYYYMMDD (space-separated)")
     parser.add_argument("--day-range", type=str, nargs=2, default=None,
@@ -192,18 +206,16 @@ def predict_day(
     width: int,
     context: int,
     class_map: Dict[str, int],
+    bbox: Tuple[float, float, float, float],
 ) -> int:
     run_output_dir.mkdir(parents=True, exist_ok=True)
     palette = build_palette_from_class_map(class_map)
     saved = 0
 
     # Build the affine transform once — same bbox/grid for every frame
-    # Geographic bounds of the Sat/Rad imagery (from sat_rad.py)
-    BBOX_MIN_LON = -96.1164
-    BBOX_MAX_LON = -94.0544
-    BBOX_MIN_LAT = 28.5698
-    BBOX_MAX_LAT = 30.3741
-    
+    # Geographic bounds of the Sat/Rad imagery (DOMAIN_BOUNDS in sat_rad.py)
+    BBOX_MIN_LON, BBOX_MAX_LON, BBOX_MIN_LAT, BBOX_MAX_LAT = bbox
+
     transform = from_bounds(
         west=BBOX_MIN_LON,
         south=BBOX_MIN_LAT,
@@ -311,12 +323,26 @@ def main() -> None:
 
     radar = args.radar.upper()
 
-    if args.radar == 'KGHX':
-        image_root = args.image_root.resolve()
+    # where to find the images to predict on
+    if args.input_root is not None:
+        image_root = args.input_root.resolve()
+    else:
+        image_root = Path(f"../other_images/{radar}/").resolve()
+    if not image_root.is_dir():
+        raise FileNotFoundError(f"Input image folder not found: {image_root}")
 
-    else:  # args.radar == 'KHGK'
-        image_root_path = f"../other_images/{radar}/"
-        image_root = Path(image_root_path)
+    # domain bounds used to georeference the output masks
+    if args.bbox is not None:
+        bbox = tuple(args.bbox)
+    elif radar in RADAR_BOUNDS:
+        bbox = RADAR_BOUNDS[radar]
+    else:
+        raise ValueError(
+            f"No domain bounds known for radar {radar}. Pass --bbox MIN_LON MAX_LON MIN_LAT MAX_LAT "
+            "(the DOMAIN_BOUNDS you used in sat_rad.py) or add it to RADAR_BOUNDS."
+        )
+    print(f"Reading images from {image_root}")
+    print(f"Georeferencing masks with bbox (min_lon, max_lon, min_lat, max_lat) = {bbox}")
 
     total_saved = 0
     for day in days:
@@ -335,6 +361,7 @@ def main() -> None:
             width=args.width,
             context=args.context,
             class_map=class_map,
+            bbox=bbox,
         )
         print(f"[{day}] saved {n_saved} mask(s) -> {day_out}")
         total_saved += n_saved

@@ -1,0 +1,26 @@
+# Install PyTorch first with the build for your CUDA version: https://pytorch.org/get-started/locally/
+torch
+torchvision
+
+# Modeling, training, inference
+transformers
+numpy
+pillow
+opencv-python
+matplotlib
+scipy
+optuna
+rasterio
+
+# Data download (sat_rad.py, bounding_box.py)
+# cartopy and arm_pyart install most reliably from conda-forge:
+#   conda install -c conda-forge cartopy arm_pyart
+cartopy
+arm_pyart
+goes2go
+s3fs
+pandas
+pyproj
+
+# Cloud-cover sampling (cloud_cover.py)
+pvlib

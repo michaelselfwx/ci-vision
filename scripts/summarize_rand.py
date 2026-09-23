@@ -6,11 +6,23 @@ import argparse
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--root", type=Path, required=True)
+parser.add_argument("--root", type=Path, required=True, help="Model output folder containing final_seed*/ runs, e.g. ../train_out/unet_v1.2")
+parser.add_argument("--seeds", type=int, nargs="+", default=None,
+                    help="Seeds to summarize. Default: every final_seed<N>/ folder found under --root")
 args = parser.parse_args()
 
 base = args.root
-seeds = [7, 10, 42, 123, 999]
+if args.seeds is not None:
+    seeds = args.seeds
+else:
+    seeds = sorted(
+        int(p.name[len("final_seed"):])
+        for p in base.glob("final_seed*")
+        if p.is_dir() and p.name[len("final_seed"):].isdigit()
+    )
+if not seeds:
+    raise RuntimeError(f"No final_seed*/ folders found under {base}")
+print(f"Summarizing seeds: {seeds}\n")
 
 mious = []
 per_class = defaultdict(list)  # class_name -> list of IoUs across seeds
