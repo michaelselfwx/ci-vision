@@ -307,7 +307,7 @@ def save_radar_png_simple(
     max_lat,
     nexrad_dt,
     pair_time,
-    reflectivity_threshold=8,
+    reflectivity_threshold=-10,
 ):
     """
     Save radar-only PNG at 512x448 without anything but the reflectivity pixels.
@@ -331,7 +331,7 @@ def save_radar_png_simple(
         "reflectivity",  # variable for ppi map
         1,  # sweep number or scan (1 is 0.5 deg)
         vmin=reflectivity_threshold,
-        vmax=65,
+        vmax=80,
         fig=fig,
         ax=ax,
         lat_0=radar.latitude["data"][0],  # lat of radar
