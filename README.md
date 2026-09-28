@@ -1,6 +1,6 @@
 # ci-vision
 
-Semantic segmentation of convective-initiation (CI) features from co-located **GOES ABI visible satellite** imagery and **NEXRAD radar** reflectivity. Two model types are included — a **U-Net** and a **DINOv2**-backbone based model — trained on hand-labeled summer 2022 imagery over Houston (KHGX).
+Semantic segmentation of convective-initiation (CI) features from co-located **GOES ABI visible satellite** imagery and **NEXRAD radar** reflectivity. Two model types are included: a **U-Net** and a **DINOv2**-backbone based model, both trained on hand-labeled summer 2022 imagery over Houston (KHGX).
 
 Each input sample is a satellite/radar image pair (512 × 448 px, 200 km × 200 km box centered on the radar). The model predicts one class per pixel:
 
@@ -15,7 +15,7 @@ Each input sample is a satellite/radar image pair (512 × 448 px, 200 km × 200 
 | 6 | `OUTFLOW` | Outflow boundary |
 | 7 | `DEEP` | Deep convection |
 
-Where labels overlap, the higher-index class wins (see `LABEL_HIERARCHY` in `scripts/train.py`).
+Where manual labels overlap, the higher-index class wins before inputing into the model for training (see `LABEL_HIERARCHY` in `scripts/train.py`).
 
 ---
 
