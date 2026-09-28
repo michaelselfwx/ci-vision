@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     # same args that train.py uses
     parser.add_argument("--model", type=str, required=True, choices=["unet", "dino"], help="Model architecture to use for segmentation")
     parser.add_argument("--device", type=str, default="auto", help="Device to use for training (e.g. 'cuda' or 'cpu')")
-    parser.add_argument("--image-root", type=Path, default="../images/", help="Root directory to search for input satellite/radar PNG files")
+    parser.add_argument("--image-root", type=Path, default="../other_images/", help="Root directory to search for input satellite/radar PNG files")
     parser.add_argument("--label-root", type=Path, action="append", default=[Path("../unsampled/dataset/labeled/"), Path("../sampled/dataset/labeled/")], help="Root directory(s) to search for label JSON files. Can specify multiple --label-root arguments to include multiple directories.")
     parser.add_argument("--output-dir", type=Path, default="../../../../train_out/{model}/{date:%Y%m%d_%H%M%S}", help="Directory to save prediction outputs")
     parser.add_argument("--height", type=int, default=448, help="Input height in pixels (images will be resized or cropped to this height)")
@@ -88,10 +88,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--decoder-dropout", type=float, default=0.1, help="Dropout rate for the segmentation decoder")
     parser.add_argument("--freeze-backbone-epochs", type=int, default=1, help="Number of epochs to freeze the backbone network")
     parser.add_argument("--run-output-dir", type=str, default="../runs/{version}", help="Directory to save run outputs (e.g. predictions, logs). Supports {version} and {date} placeholders.")
-    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--checkpoint", type=Path, default=None, help="Path to a model checkpoint to load for inference. If not provided, the HGX trained model from Hugging Face will be used.")
     parser.add_argument("--class-weighting", type=str, default="none", help="Training-only option; accepted so training configs can be passed with @, ignored at inference")
     parser.add_argument("--radar", type=str, default="KHGX", help="Radar station of the imagery (e.g. KHGX, KJAX, KMLB)")
-    parser.add_argument("--input-root", type=Path, default=None, help="Folder searched (recursively) for the sat/rad PNGs to predict on. Default: ../other_images/<RADAR>/ (where sat_rad.py saves them)")
     parser.add_argument("--bbox", type=float, nargs=4, default=None, metavar=("MIN_LON", "MAX_LON", "MIN_LAT", "MAX_LAT"),
                         help="Geographic bounds of the imagery, used to georeference the GeoTIFF masks. Default: looked up from --radar in RADAR_BOUNDS")
     parser.add_argument("--day", type=str, nargs="+", default=None,
@@ -150,6 +149,13 @@ def load_model(
     decoder_channels: int,
     decoder_dropout: float,
 ):
+
+    if checkpoint_path is None:
+        # uses the hugging face model
+        from huggingface_hub import snapshot_download
+        hf_model_id = "michaelselfwx/ci-vision-dino-base"
+        checkpoint_path = snapshot_download(hf_model_id)
+
     ckpt = torch.load(checkpoint_path, map_location=device)
     class_map = ckpt["class_map"]
     checkpoint_context = ckpt.get("context", context)
@@ -306,9 +312,19 @@ def main() -> None:
     days = expand_days(args)
     print(f"Will process {len(days)} day(s): {days}")
 
+    if args.checkpoint is None:
+        # uses the hugging face model
+        from huggingface_hub import hf_hub_download
+        checkpoint_path = hf_hub_download(
+            repo_id="michaelselfwx/ci-vision-dino-base", 
+            filename="final_model.pt"
+        )
+    else:
+        checkpoint_path = args.checkpoint.resolve()
+
     # Load the model ONCE — big win for DINOv2
     model, class_map = load_model(
-        checkpoint_path=args.checkpoint.resolve(),
+        checkpoint_path=checkpoint_path,
         run_output_dir=base_output_dir,
         device=device,
         context=args.context,
@@ -324,8 +340,8 @@ def main() -> None:
     radar = args.radar.upper()
 
     # where to find the images to predict on
-    if args.input_root is not None:
-        image_root = args.input_root.resolve()
+    if args.image_root is not None:
+        image_root = args.image_root.resolve()
     else:
         image_root = Path(f"../other_images/{radar}/").resolve()
     if not image_root.is_dir():
