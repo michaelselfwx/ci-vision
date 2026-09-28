@@ -89,7 +89,7 @@ The workflow is: **(1) define your domain → (2) download sat/radar pairs → (
 
 ### 1. Get a trained checkpoint
 
-Model weights are not committed to the repo. Download a checkpoint (`best_model.pt`) from **[TODO: add link to released weights]**, or train your own (see [Training](#training-your-own-model)). A checkpoint is a PyTorch dict containing `model_state`, `class_map`, and `context`.
+If you do not specify which final model weights to use, then the run_model.py script will pull the base dino one from te Hugging Face repo. If you are training your own (see [Training](#training-your-own-model)). A checkpoint is a PyTorch dict containing `model_state`, `class_map`, and `context`.
 
 You also need to know which architecture/config produced it — e.g. a checkpoint trained with `configs/dino_v3.5/dino_v3.5.config` must be run with `--model dino --dino-name facebook/dinov2-base --decoder-channels 256`.
 
@@ -97,7 +97,7 @@ You also need to know which architecture/config produced it — e.g. a checkpoin
 
 Imagery is pulled anonymously from the NOAA Open Data buckets on AWS — no account needed.
 
-**a. Compute the domain for your radar.** The model was trained on a 200 km × 200 km box centered on the radar. Edit the latitude/longitude at the bottom of `scripts/bounding_box.py` and run it:
+**a. Compute the domain for your radar.** The model was trained on a 200 km × 200 km box centered on the radar. **Edit the latitude/longitude** at the bottom of `scripts/bounding_box.py` and run it:
 
 ```bash
 cd scripts
@@ -105,7 +105,7 @@ python bounding_box.py
 # Bounding box: (min_lon, max_lon, min_lat, max_lat)
 ```
 
-Coordinates for a few sites are listed at the bottom of that file (KHGX, KMLB, KJAX). Any NEXRAD site works — look up its lat/lon from the [NOAA NEXRAD site list](https://www.roc.noaa.gov/branches/program-branch/site-id-database/).
+Coordinates for a few sites are listed at the bottom of that file (KHGX, KMLB, KJAX). Any NEXRAD site *should* work; look up its lat/lon from [this site](https://www.radarmonster.com/radars/kjax/).
 
 **b. Configure `scripts/sat_rad.py`.** Edit the constants at the top of the file and the date range in the `__main__` block:
 
@@ -122,7 +122,7 @@ start_date = datetime.date(2023, 7, 1)
 end_date   = datetime.date(2023, 7, 3)
 ```
 
-By default each day is processed from **14:00–23:59 UTC** (daytime, since the satellite input is visible imagery). Change the `start`/`end` times in the loop if needed.
+By default each day is processed from **14:00–23:59 UTC** (daytime, since the satellite input is visible imagery). Change the `start`/`end` times in the loop if needed. This is configured for Central timezone roughly.
 
 **c. Run it:**
 
@@ -134,7 +134,7 @@ For each day, the script lists all GOES CONUS (ABI-L2-CMIPC) scans and NEXRAD Le
 
 ```
 ../other_images/<RADAR_STATION>/YYYYMMDD/sat/YYYYMMDD_PPPP_TTTT_sat.png   # "true-green" visible composite (bands 1/2/3)
-../other_images/<RADAR_STATION>/YYYYMMDD/rad/YYYYMMDD_PPPP_TTTT_rad.png   # 0.5° reflectivity, ≥ 8 dBZ, HomeyerRainbow colormap
+../other_images/<RADAR_STATION>/YYYYMMDD/rad/YYYYMMDD_PPPP_TTTT_rad.png   # 0.5° reflectivity, ≥ 0 dBZ, HomeyerRainbow colormap
 ```
 
 > It uses up to 32 processes / 16 threads (`max_workers` in `__main__`). Lower these on a laptop.
@@ -144,13 +144,10 @@ For each day, the script lists all GOES CONUS (ABI-L2-CMIPC) scans and NEXRAD Le
 ```bash
 python run_model.py \
   --model dino \
-  --dino-name facebook/dinov2-base \
-  --decoder-channels 256 \
-  --checkpoint /path/to/best_model.pt \
   --radar KMLB \
   --bbox -81.6721 -79.6367 27.2106 29.0153 \
   --day-range 20230701 20230703 \
-  --run-output-dir ../runs/dino_v3.5
+  --run-output-dir ../runs/dino_base
 ```
 
 Key arguments:
@@ -160,7 +157,7 @@ Key arguments:
 | `--model` | `unet` or `dino` — must match the checkpoint |
 | `--checkpoint` | Path to `best_model.pt` / `final_model.pt` |
 | `--radar` | Station ID of the imagery (default `KHGX`) |
-| `--input-root` | Folder of sat/rad PNGs to predict on (default `../other_images/<RADAR>/`, where `sat_rad.py` saves them) |
+| `--image-root` | Folder of sat/rad PNGs to predict on (default `../other_images/<RADAR>/`, where `sat_rad.py` saves them) |
 | `--bbox` | `MIN_LON MAX_LON MIN_LAT MAX_LAT` of the imagery, used to georeference the GeoTIFFs. Defaults to the entry for `--radar` in `RADAR_BOUNDS` (KHGX, KMLB, KJAX); required for any other site |
 | `--day` | One or more days: `--day 20230701 20230715` |
 | `--day-range` | Inclusive range: `--day-range 20230701 20230731` |
@@ -170,7 +167,7 @@ Key arguments:
 | `--dino-name`, `--decoder-channels`, `--decoder-dropout` | DINOv2 only — must match training |
 | `--device` | `auto` (default), `cuda`, or `cpu` |
 
-You can also pass a training config with `@`, e.g. `python run_model.py @../configs/unet_v1.2/unet_v1.2.config --checkpoint ... --radar KMLB --day 20230701`. This fills in the architecture args and names the output folder after the config version. Training-only options in the config (epochs, learning rates, augmentation, class weighting) are accepted and ignored.
+You can also pass a training config with `@`, e.g. `python run_model.py @../configs/dino_rand_train/dino_v1.5.config --checkpoint ... --radar KMLB --day 20230701`. This fills in the architecture args and names the output folder after the config version. Training-only options in the config (epochs, learning rates, augmentation, class weighting) are accepted and ignored.
 
 **Outputs**, per frame, in `<run-output-dir>/YYYYMMDD/`:
 
@@ -179,7 +176,7 @@ You can also pass a training config with `@`, e.g. `python run_model.py @../conf
 
 > **Running at a new radar site:** pass the same bounds you used for `DOMAIN_BOUNDS` in `sat_rad.py` via `--bbox`, or add the site to `RADAR_BOUNDS` at the top of `run_model.py`, so the GeoTIFF masks are placed correctly.
 >
-> ⚠️ **Domain shift:** the model was trained only on the Houston area, June–September 2022. Expect degraded skill in other climates, seasons, or coastlines — the `OCEAN`/`LAND`/`SBF` classes are especially location-dependent.
+> ⚠️ **Domain shift:** the model was trained only on the Houston area, June–September 2022. Expect degraded skill else where!
 
 ---
 
@@ -189,10 +186,10 @@ You can also pass a training config with `@`, e.g. `python run_model.py @../conf
 
 ```bash
 cd scripts
-python train.py @../configs/dino_v3.5/dino_v3.5.config --image-root ../
+python train.py @../configs/dino_rand_train/dino_v1.5.config --image-root ../
 ```
 
-`--image-root` is searched recursively for `*_sat.png` / `*_rad.png`, and labels are read from `--label-root` (defaults to `../sampled/dataset/labeled/` and `../unsampled/dataset/labeled/`). Since the labeled folders already contain their PNGs, pointing `--image-root` at the repo root is enough to train with `--context 0`. For `--context > 0` you need the full, un-thinned image archive for each day.
+`--image-root` is searched recursively for `*_sat.png` / `*_rad.png`, and labels are read from `--label-root` (defaults to `../sampled/dataset/labeled/` and `../unsampled/dataset/labeled/`). Since the labeled folders already contain their PNGs, pointing `--image-root` at the repo root is enough to train with `--context 0`. **For `--context > 0` you need the full, un-thinned image archive for each day.**
 
 How the labeled data is split is set by two flags (summarized in `configs/readme.md`):
 
